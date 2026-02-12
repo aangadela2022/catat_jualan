@@ -3,34 +3,34 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Kasir Kilat V10 - Cloud</title>
+    <title>Kasir Kilat V10 - Instan</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { font-family: sans-serif; -webkit-tap-highlight-color: transparent; background: #f3f4f6; }
         .btn-press:active { transform: scale(0.95); }
-        .loading-spin { animation: spin 1s linear infinite; }
+        .spin { animation: spin 1s linear infinite; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        /* Skeleton loading style */
+        .skeleton { background: linear-gradient(90deg, #ececec 25%, #f5f5f5 50%, #ececec 75%); background-size: 200% 100%; animation: loading 1.5s infinite; }
+        @keyframes loading { from { background-position: 200% 0; } to { background-position: -200% 0; } }
     </style>
 </head>
 <body class="pb-20">
 
-    <!-- Header dengan Status Cloud -->
-    <header class="bg-white border-b p-4 flex justify-between items-center sticky top-0 z-50 shadow-sm">
+    <!-- Header Instan -->
+    <header class="bg-white border-b p-4 flex justify-between items-center sticky top-0 z-50">
         <div>
             <h1 class="text-xl font-black text-indigo-600 leading-none">KILAT V10</h1>
-            <p id="user-display" class="text-[9px] text-gray-400 mt-1 truncate max-w-[150px]">Menghubungkan...</p>
+            <p id="cloud-status" class="text-[9px] text-gray-400 mt-1 uppercase font-bold tracking-widest">● Mode Lokal</p>
         </div>
-        <div class="flex gap-2">
-            <button onclick="syncData()" id="sync-btn" class="bg-indigo-50 text-indigo-600 p-2 rounded-lg border border-indigo-100 flex items-center gap-1">
-                <span id="sync-icon">☁️</span>
-                <span class="text-[10px] font-bold">SYNC</span>
-            </button>
-        </div>
+        <button onclick="manualSync()" id="sync-btn" class="bg-gray-100 text-gray-500 p-2 rounded-lg flex items-center gap-1 transition-all">
+            <span id="sync-icon">☁️</span>
+            <span class="text-[10px] font-bold">SYNC</span>
+        </button>
     </header>
 
-    <!-- Konten Utama -->
     <main id="content" class="p-4 max-w-md mx-auto">
-        <!-- JS akan mengisi ini -->
+        <!-- Tampilan awal langsung diisi oleh JS dari LocalStorage -->
     </main>
 
     <!-- Navigasi Bawah -->
@@ -49,86 +49,130 @@
         </button>
     </nav>
 
-    <!-- Firebase SDK -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Konfigurasi dari Environment
+        // 1. Inisialisasi Data Lokal (LANGSUNG JALAN)
+        let db = {
+            produk: JSON.parse(localStorage.getItem('v10_pro') || '[]'),
+            transaksi: JSON.parse(localStorage.getItem('v10_tra') || '[]'),
+            toko: ["Toko Utama", "Cabang A", "Cabang B"]
+        };
+
+        const renderHome = () => {
+            const total = db.transaksi.reduce((sum, item) => sum + item.total, 0);
+            const content = document.getElementById('content');
+            content.innerHTML = `
+                <div class="bg-gradient-to-br from-indigo-600 to-blue-500 p-6 rounded-2xl text-white shadow-lg mb-6 transition-all">
+                    <p class="text-[10px] opacity-80 uppercase font-bold tracking-widest">Total Penjualan</p>
+                    <h2 class="text-3xl font-black mt-1">Rp ${total.toLocaleString()}</h2>
+                </div>
+                <div class="grid grid-cols-2 gap-4 mb-8">
+                    <div class="bg-white p-4 rounded-xl border-b-4 border-indigo-200">
+                        <p class="text-[9px] text-gray-400 font-bold uppercase italic">Transaksi</p>
+                        <p class="text-2xl font-black text-gray-700">${db.transaksi.length}</p>
+                    </div>
+                    <div class="bg-white p-4 rounded-xl border-b-4 border-blue-200">
+                        <p class="text-[9px] text-gray-400 font-bold uppercase italic">Produk</p>
+                        <p class="text-2xl font-black text-gray-700">${db.produk.length}</p>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="font-bold mb-3 text-gray-400 text-[10px] uppercase tracking-widest">Riwayat Terakhir</h3>
+                    <div class="space-y-3">
+                        ${db.transaksi.length === 0 ? '<div class="text-center py-10 text-gray-300 text-xs">Belum ada transaksi</div>' : ''}
+                        ${db.transaksi.slice(-5).reverse().map(t => `
+                            <div class="bg-white p-4 rounded-xl shadow-sm flex justify-between items-center border border-gray-50">
+                                <div>
+                                    <p class="font-bold text-sm text-gray-800">${t.nama}</p>
+                                    <p class="text-[10px] text-gray-400">${t.toko} • ${new Date(t.tgl).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                                </div>
+                                <p class="font-black text-indigo-600">Rp ${t.total.toLocaleString()}</p>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        };
+
+        // Langsung tampilkan Home saat script dimuat (Tanpa nunggu Firebase)
+        renderHome();
+
+        // 2. Firebase di Latar Belakang
         const firebaseConfig = JSON.parse(__firebase_config);
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db_fs = getFirestore(app);
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'kasir-kilat-v10';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        let user = null;
 
-        // Local State
-        let db = {
-            produk: JSON.parse(localStorage.getItem('v10_pro') || '[]'),
-            transaksi: JSON.parse(localStorage.getItem('v10_tra') || '[]'),
-            toko: ["Toko A", "Toko B", "Toko C"]
-        };
-        let currentUser = null;
-
-        // Simpan ke LocalStorage (Selalu Instan)
-        function saveLocal() {
-            localStorage.setItem('v10_pro', JSON.stringify(db.produk));
-            localStorage.setItem('v10_tra', JSON.stringify(db.transaksi));
-        }
-
-        // Fungsi Sinkronisasi (Manual Push/Pull)
-        window.syncData = async () => {
-            if (!currentUser) return alert("Belum terhubung ke internet");
-            
-            const btn = document.getElementById('sync-btn');
-            const icon = document.getElementById('sync-icon');
-            btn.disabled = true;
-            icon.classList.add('loading-spin');
-            
+        const initAuth = async () => {
             try {
-                const docRef = doc(db_fs, 'artifacts', appId, 'users', currentUser.uid, 'appData');
-                
-                // 1. Ambil data terbaru dari Cloud (Pull)
-                const snapshot = await getDoc(docRef);
-                if (snapshot.exists()) {
-                    const cloudData = snapshot.data();
-                    // Gabungkan atau timpa sesuai kebutuhan (di sini kita timpa local dengan cloud jika ada data baru)
-                    if (confirm("Ada data di awan. Ingin sinkronisasi data?")) {
-                        db.produk = cloudData.produk || [];
-                        db.transaksi = cloudData.transaksi || [];
-                        saveLocal();
-                    }
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
                 }
-
-                // 2. Kirim data lokal ke Cloud (Push)
-                await setDoc(docRef, {
-                    produk: db.produk,
-                    transaksi: db.transaksi,
-                    lastSync: new Date().toISOString()
-                });
-
-                alert("Sinkronisasi Berhasil!");
-                window.location.reload(); 
-            } catch (e) {
-                console.error(e);
-                alert("Gagal sinkron: " + e.message);
-            } finally {
-                btn.disabled = false;
-                icon.classList.remove('loading-spin');
-            }
+            } catch (e) { console.error("Auth failed", e); }
         };
+        initAuth();
 
-        // Inisialisasi Auth
-        onAuthStateChanged(auth, (user) => {
-            if (user) {
-                currentUser = user;
-                document.getElementById('user-display').innerText = "ID: " + user.uid;
-            } else {
-                signInAnonymously(auth);
+        onAuthStateChanged(auth, (u) => {
+            user = u;
+            if (u) {
+                document.getElementById('cloud-status').innerText = "● Terhubung Cloud";
+                document.getElementById('cloud-status').classList.replace('text-gray-400', 'text-green-500');
+                document.getElementById('sync-btn').classList.replace('bg-gray-100', 'bg-indigo-50');
+                document.getElementById('sync-btn').classList.replace('text-gray-500', 'text-indigo-600');
             }
         });
 
-        // UI Logic
+        // 3. Fungsi Sinkronisasi (Hanya saat diminta)
+        window.manualSync = async () => {
+            if (!user) return alert("Belum terhubung ke internet.");
+            const btn = document.getElementById('sync-btn');
+            const icon = document.getElementById('sync-icon');
+            
+            btn.disabled = true;
+            icon.classList.add('spin');
+
+            try {
+                const docRef = doc(db_fs, 'artifacts', appId, 'users', user.uid, 'storeData');
+                const snap = await getDoc(docRef);
+
+                // Jika ada data di awan, tanya apakah mau ambil (Pull)
+                if (snap.exists()) {
+                    const cloud = snap.data();
+                    if (cloud.transaksi?.length > db.transaksi.length) {
+                        if (confirm("Data di server lebih baru. Ambil data?")) {
+                            db.produk = cloud.produk || db.produk;
+                            db.transaksi = cloud.transaksi || db.transaksi;
+                            localStorage.setItem('v10_pro', JSON.stringify(db.produk));
+                            localStorage.setItem('v10_tra', JSON.stringify(db.transaksi));
+                            renderHome();
+                        }
+                    }
+                }
+
+                // Kirim data lokal ke awan (Push)
+                await setDoc(docRef, {
+                    produk: db.produk,
+                    transaksi: db.transaksi,
+                    updatedAt: new Date().toISOString()
+                });
+
+                alert("Sinkronisasi Selesai!");
+            } catch (e) {
+                alert("Gagal sinkron: " + e.message);
+            } finally {
+                btn.disabled = false;
+                icon.classList.remove('spin');
+            }
+        };
+
+        // 4. Navigasi & Fungsi Kasir
         window.changeTab = (tab) => {
             const root = document.getElementById('content');
             ['home', 'kasir', 'produk'].forEach(t => {
@@ -136,78 +180,43 @@
             });
             document.getElementById('icon-' + tab).classList.replace('text-gray-400', 'text-indigo-600');
 
-            if (tab === 'home') {
-                const total = db.transaksi.reduce((sum, item) => sum + item.total, 0);
-                root.innerHTML = `
-                    <div class="bg-gradient-to-br from-indigo-600 to-blue-500 p-6 rounded-2xl text-white shadow-lg mb-6">
-                        <p class="text-[10px] opacity-80 uppercase font-black tracking-widest">Total Penjualan</p>
-                        <h2 class="text-3xl font-black mt-1">Rp ${total.toLocaleString()}</h2>
-                    </div>
-                    <div class="grid grid-cols-2 gap-4 mb-8">
-                        <div class="bg-white p-4 rounded-xl border-b-4 border-indigo-200">
-                            <p class="text-[9px] text-gray-400 font-bold uppercase italic">Transaksi</p>
-                            <p class="text-2xl font-black text-gray-700">${db.transaksi.length}</p>
-                        </div>
-                        <div class="bg-white p-4 rounded-xl border-b-4 border-blue-200">
-                            <p class="text-[9px] text-gray-400 font-bold uppercase italic">Produk</p>
-                            <p class="text-2xl font-black text-gray-700">${db.produk.length}</p>
-                        </div>
-                    </div>
-                    <div>
-                        <h3 class="font-bold mb-3 text-gray-500 text-xs uppercase tracking-tighter">Riwayat Terakhir</h3>
-                        <div class="space-y-3">
-                            ${db.transaksi.length === 0 ? '<p class="text-center text-gray-400 text-xs py-4">Belum ada transaksi</p>' : ''}
-                            ${db.transaksi.slice(-5).reverse().map(t => `
-                                <div class="bg-white p-4 rounded-xl shadow-sm flex justify-between items-center">
-                                    <div>
-                                        <p class="font-bold text-sm text-gray-800">${t.nama}</p>
-                                        <p class="text-[10px] text-gray-400">${t.toko} • ${new Date(t.tgl).toLocaleTimeString()}</p>
-                                    </div>
-                                    <p class="font-black text-indigo-600">Rp ${t.total.toLocaleString()}</p>
-                                </div>
-                            `).join('')}
-                        </div>
-                    </div>
-                `;
-            }
-
+            if (tab === 'home') renderHome();
             if (tab === 'kasir') {
                 root.innerHTML = `
-                    <div class="bg-white p-6 rounded-2xl shadow-sm border space-y-5">
-                        <h3 class="font-black text-sm text-indigo-600">FORM KASIR</h3>
+                    <div class="bg-white p-6 rounded-2xl shadow-sm border space-y-5 animate-in fade-in duration-300">
+                        <h3 class="font-black text-sm text-indigo-600 tracking-widest">KASIR BARU</h3>
                         <div>
                             <label class="text-[10px] font-bold text-gray-400 uppercase">Pilih Cabang</label>
-                            <select id="s-toko" class="w-full bg-gray-50 p-4 rounded-xl text-sm border-none ring-1 ring-gray-200 mt-1">
+                            <select id="s-toko" class="w-full bg-gray-50 p-4 rounded-xl text-sm border-none ring-1 ring-gray-100 mt-1">
                                 ${db.toko.map(t => `<option value="${t}">${t}</option>`).join('')}
                             </select>
                         </div>
                         <div>
-                            <label class="text-[10px] font-bold text-gray-400 uppercase">Cari Produk</label>
-                            <select id="s-produk" class="w-full bg-gray-50 p-4 rounded-xl text-sm border-none ring-1 ring-gray-200 mt-1">
+                            <label class="text-[10px] font-bold text-gray-400 uppercase">Pilih Produk</label>
+                            <select id="s-produk" class="w-full bg-gray-50 p-4 rounded-xl text-sm border-none ring-1 ring-gray-100 mt-1">
                                 <option value="">-- Pilih Barang --</option>
                                 ${db.produk.map((p, i) => `<option value="${i}">${p.nama} (Rp ${p.harga.toLocaleString()})</option>`).join('')}
                             </select>
                         </div>
                         <div>
                             <label class="text-[10px] font-bold text-gray-400 uppercase">Jumlah</label>
-                            <input type="number" id="s-qty" value="1" class="w-full bg-gray-50 p-4 rounded-xl text-sm border-none ring-1 ring-gray-200 mt-1">
+                            <input type="number" id="s-qty" value="1" class="w-full bg-gray-50 p-4 rounded-xl text-sm border-none ring-1 ring-gray-100 mt-1">
                         </div>
-                        <button onclick="prosesTransaksi()" class="w-full bg-indigo-600 text-white font-black py-4 rounded-xl btn-press shadow-indigo-200 shadow-lg">SIMPAN DATA</button>
+                        <button onclick="prosesTransaksi()" class="w-full bg-indigo-600 text-white font-black py-4 rounded-xl btn-press shadow-lg shadow-indigo-100">SIMPAN TRANSAKSI</button>
                     </div>
                 `;
             }
-
             if (tab === 'produk') {
                 root.innerHTML = `
                     <div class="bg-white p-6 rounded-2xl shadow-sm border mb-6">
-                        <h3 class="font-black text-sm text-gray-800 mb-4">TAMBAH PRODUK</h3>
-                        <input type="text" id="p-nama" placeholder="Nama Barang" class="w-full bg-gray-50 p-4 rounded-xl text-sm mb-3 border-none ring-1 ring-gray-200">
-                        <input type="number" id="p-harga" placeholder="Harga Jual" class="w-full bg-gray-50 p-4 rounded-xl text-sm mb-4 border-none ring-1 ring-gray-200">
-                        <button onclick="tambahProduk()" class="w-full bg-gray-800 text-white font-black py-4 rounded-xl btn-press">SIMPAN PRODUK</button>
+                        <h3 class="font-black text-sm text-gray-800 mb-4 tracking-widest uppercase">Input Produk</h3>
+                        <input type="text" id="p-nama" placeholder="Nama Barang" class="w-full bg-gray-50 p-4 rounded-xl text-sm mb-3 border-none ring-1 ring-gray-100">
+                        <input type="number" id="p-harga" placeholder="Harga Jual" class="w-full bg-gray-50 p-4 rounded-xl text-sm mb-4 border-none ring-1 ring-gray-100">
+                        <button onclick="tambahProduk()" class="w-full bg-gray-800 text-white font-black py-4 rounded-xl btn-press">SIMPAN BARANG</button>
                     </div>
                     <div class="space-y-2">
                         ${db.produk.map(p => `
-                            <div class="bg-white p-4 rounded-xl flex justify-between items-center">
+                            <div class="bg-white p-4 rounded-xl flex justify-between items-center border border-gray-50">
                                 <span class="font-bold text-gray-700">${p.nama}</span>
                                 <span class="bg-green-100 text-green-700 px-3 py-1 rounded-full text-[10px] font-black">Rp ${p.harga.toLocaleString()}</span>
                             </div>
@@ -220,9 +229,9 @@
         window.tambahProduk = () => {
             const nama = document.getElementById('p-nama').value;
             const harga = parseInt(document.getElementById('p-harga').value);
-            if (!nama || !harga) return alert("Isi nama dan harga!");
+            if (!nama || !harga) return;
             db.produk.push({ nama, harga });
-            saveLocal();
+            localStorage.setItem('v10_pro', JSON.stringify(db.produk));
             changeTab('produk');
         };
 
@@ -230,23 +239,15 @@
             const toko = document.getElementById('s-toko').value;
             const pIdx = document.getElementById('s-produk').value;
             const qty = parseInt(document.getElementById('s-qty').value);
-            if (pIdx === "" || !qty) return alert("Pilih produk!");
+            if (pIdx === "" || !qty) return;
             
             const produk = db.produk[pIdx];
             db.transaksi.push({
-                toko,
-                nama: produk.nama,
-                qty: qty,
-                total: produk.harga * qty,
-                tgl: new Date().toISOString()
+                toko, nama: produk.nama, qty, total: produk.harga * qty, tgl: new Date().toISOString()
             });
-            saveLocal();
-            alert("Berhasil disimpan secara lokal!");
+            localStorage.setItem('v10_tra', JSON.stringify(db.transaksi));
             changeTab('home');
         };
-
-        // Mulai aplikasi
-        changeTab('home');
     </script>
 </body>
 </html>
