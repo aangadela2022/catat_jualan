@@ -2,187 +2,215 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sales Pro V8 - Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Sales Pro V9 - Gudang & Toko</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
         body { font-family: 'Plus Jakarta Sans', sans-serif; -webkit-tap-highlight-color: transparent; }
         .active-tab { color: #4f46e5; transform: scale(1.1); }
-        .tab-indicator { height: 4px; width: 4px; background: #4f46e5; border-radius: 50%; margin-top: 4px; }
+        .indicator { height: 4px; width: 4px; background: #4f46e5; border-radius: 50%; margin-top: 4px; }
+        
+        #loading-screen { position: fixed; inset: 0; background: white; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 0.5s; }
+        
+        .table-container::-webkit-scrollbar { height: 4px; }
+        .table-container::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+        
+        .sub-nav-active { background: #4f46e5; color: white; }
     </style>
 </head>
 <body class="bg-gray-50 pb-28">
 
-    <!-- Header -->
-    <header class="bg-indigo-700 text-white p-5 sticky top-0 z-50 shadow-md flex justify-between items-center">
-        <div class="flex items-center gap-2">
-            <span class="font-black italic text-xl tracking-tighter uppercase">Sales Pro V8</span>
+    <div id="loading-screen">
+        <div class="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
+        <p class="mt-4 text-[10px] font-black uppercase tracking-widest text-indigo-600">Sinkronisasi Data...</p>
+    </div>
+
+    <header class="bg-white border-b border-gray-100 p-5 sticky top-0 z-50 flex justify-between items-center">
+        <div class="flex flex-col">
+            <span class="font-black italic text-lg tracking-tighter uppercase text-indigo-700 leading-none">Sales Pro V9</span>
+            <span class="text-[8px] font-bold text-gray-400 uppercase tracking-widest mt-1">Gudang & Toko Edition</span>
         </div>
-        <div id="user-id" class="text-[9px] bg-white/20 px-3 py-1 rounded-full font-mono font-bold backdrop-blur-sm">
-            Memuat...
+        <div id="user-id" class="text-[9px] bg-indigo-50 text-indigo-600 px-3 py-1 rounded-full font-mono font-bold border border-indigo-100">
+            -- -- --
         </div>
     </header>
 
-    <!-- Main Content Containers -->
     <main id="app-content" class="max-w-4xl mx-auto p-4 space-y-4">
-        <!-- Konten akan diisi oleh JavaScript -->
+        <!-- Content will be injected here -->
     </main>
 
-    <!-- Navigation -->
-    <nav class="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-xl border-t border-gray-100 flex h-20 shadow-[0_-10px_40px_rgba(0,0,0,0.05)] z-50 px-6 items-center">
+    <nav class="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md border-t border-gray-100 flex h-20 shadow-2xl z-50 px-6 items-center">
         <button onclick="switchTab('dashboard')" class="flex-1 flex flex-col items-center gap-1 text-gray-400 nav-btn" id="nav-dashboard">
             <span class="text-xl">🏠</span>
             <span class="text-[8px] font-black uppercase tracking-widest">Beranda</span>
             <div class="indicator hidden"></div>
         </button>
         <button onclick="switchTab('kasir')" class="flex-1 flex flex-col items-center gap-1 text-gray-400 nav-btn" id="nav-kasir">
-            <span class="text-xl">💰</span>
+            <span class="text-xl">⚡</span>
             <span class="text-[8px] font-black uppercase tracking-widest">Kasir</span>
             <div class="indicator hidden"></div>
         </button>
-        <button onclick="switchTab('data')" class="flex-1 flex flex-col items-center gap-1 text-gray-400 nav-btn" id="nav-data">
+        <button onclick="switchTab('gudang')" class="flex-1 flex flex-col items-center gap-1 text-gray-400 nav-btn" id="nav-gudang">
             <span class="text-xl">📦</span>
-            <span class="text-[8px] font-black uppercase tracking-widest">Data</span>
+            <span class="text-[8px] font-black uppercase tracking-widest">Gudang</span>
             <div class="indicator hidden"></div>
         </button>
     </nav>
 
-    <!-- Firebase SDKs -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
         import { getFirestore, collection, addDoc, onSnapshot, doc, deleteDoc, Timestamp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
 
-        // Global State
         const firebaseConfig = JSON.parse(__firebase_config);
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'v8-sales-app';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'v9-gudang-toko';
         
         let currentUser = null;
         let products = [];
         let stores = [];
         let sales = [];
         let currentTab = 'dashboard';
+        let currentSubGudang = 'produk'; // 'produk' or 'toko'
+        let initialLoadDone = false;
 
-        // Initialize Auth
-        onAuthStateChanged(auth, (user) => {
+        onAuthStateChanged(auth, async (user) => {
             if (user) {
                 currentUser = user;
                 document.getElementById('user-id').innerText = `ID: ${user.uid.slice(0,8)}`;
-                initDataListeners();
+                startListening();
             } else {
-                signInAnonymously(auth);
+                await signInAnonymously(auth);
             }
         });
 
-        function initDataListeners() {
-            const userPath = (col) => collection(db, 'artifacts', appId, 'users', currentUser.uid, col);
-            
-            onSnapshot(userPath('products'), (s) => {
+        function startListening() {
+            const path = (name) => collection(db, 'artifacts', appId, 'users', currentUser.uid, name);
+            let loadedCount = 0;
+            const checkInitialLoad = () => {
+                loadedCount++;
+                if (loadedCount >= 3) {
+                    initialLoadDone = true;
+                    const loader = document.getElementById('loading-screen');
+                    if(loader) loader.remove();
+                    render();
+                }
+            };
+
+            onSnapshot(path('products'), (s) => {
                 products = s.docs.map(d => ({id: d.id, ...d.data()}));
-                render();
-            });
-            onSnapshot(userPath('stores'), (s) => {
+                if (!initialLoadDone) checkInitialLoad(); else render();
+            }, () => checkInitialLoad());
+
+            onSnapshot(path('stores'), (s) => {
                 stores = s.docs.map(d => ({id: d.id, ...d.data()}));
-                render();
-            });
-            onSnapshot(userPath('sales'), (s) => {
+                if (!initialLoadDone) checkInitialLoad(); else render();
+            }, () => checkInitialLoad());
+
+            onSnapshot(path('sales'), (s) => {
                 sales = s.docs.map(d => ({id: d.id, ...d.data()})).sort((a,b) => b.timestamp - a.timestamp);
-                render();
-            });
+                if (!initialLoadDone) checkInitialLoad(); else render();
+            }, () => checkInitialLoad());
         }
 
-        // Global functions for buttons
         window.switchTab = (tab) => {
             currentTab = tab;
             render();
         };
 
-        window.addProduct = async () => {
-            const nama = document.getElementById('prod-nama').value;
-            const beli = document.getElementById('prod-beli').value;
-            const jual = document.getElementById('prod-jual').value;
-            const stok = document.getElementById('prod-stok').value;
-            if(!nama || !beli || !jual || !stok) return alert("Isi semua data!");
-            
-            await addDoc(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'products'), {
-                nama, hargaBeli: Number(beli), hargaJual: Number(jual), stok: Number(stok), timestamp: Timestamp.now()
-            });
-            alert("Produk disimpan");
-        };
-
-        window.addStore = async () => {
-            const nama = document.getElementById('store-nama').value;
-            const alamat = document.getElementById('store-alamat').value;
-            if(!nama || !alamat) return alert("Isi nama dan alamat!");
-
-            await addDoc(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'stores'), {
-                nama, alamat, timestamp: Timestamp.now()
-            });
-            alert("Toko disimpan");
-        };
-
-        window.saveSale = async () => {
-            const storeId = document.getElementById('sale-toko').value;
-            const prodId = document.getElementById('sale-prod').value;
-            const qty = Number(document.getElementById('sale-qty').value);
-            
-            if(!storeId || !prodId || !qty) return alert("Lengkapi data transaksi!");
-            
-            const prod = products.find(p => p.id === prodId);
-            const store = stores.find(s => s.id === storeId);
-            const total = qty * prod.hargaJual;
-
-            await addDoc(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'sales'), {
-                storeName: store.nama,
-                prodNama: prod.nama,
-                qty,
-                total,
-                timestamp: Timestamp.now()
-            });
-            alert("Transaksi Berhasil!");
+        window.switchSubGudang = (sub) => {
+            currentSubGudang = sub;
+            render();
         };
 
         window.deleteItem = async (col, id) => {
-            if(confirm("Hapus data ini?")) {
-                await deleteDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid, col, id));
-            }
+            if(!confirm("Hapus data ini secara permanen?")) return;
+            await deleteDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid, col, id));
         };
 
+        // --- CRUD ACTIONS ---
+        window.saveSale = async () => {
+            const storeName = document.getElementById('sale-toko-name').value;
+            const prodId = document.getElementById('sale-prod').value;
+            const qty = Number(document.getElementById('sale-qty').value);
+            
+            if(!storeName || !prodId || !qty) return alert("Mohon lengkapi semua field!");
+            const prod = products.find(p => p.id === prodId);
+
+            await addDoc(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'sales'), {
+                storeName,
+                prodNama: prod.nama,
+                qty,
+                total: qty * prod.hargaJual,
+                timestamp: Timestamp.now()
+            });
+            document.getElementById('sale-qty').value = "";
+        };
+
+        window.addProduct = async () => {
+            const nama = document.getElementById('p-n').value;
+            const beli = document.getElementById('p-b').value;
+            const jual = document.getElementById('p-j').value;
+            const stok = document.getElementById('p-s').value;
+            if(!nama || !beli || !jual || !stok) return alert("Isi semua data produk!");
+
+            await addDoc(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'products'), {
+                nama, hargaBeli: Number(beli), hargaJual: Number(jual), stok: Number(stok), timestamp: Timestamp.now()
+            });
+            alert("Produk berhasil disimpan!");
+        };
+
+        window.addStore = async () => {
+            const nama = document.getElementById('s-n').value;
+            const alamat = document.getElementById('s-a').value;
+            const telp = document.getElementById('s-t').value;
+            if(!nama) return alert("Nama Toko wajib diisi!");
+
+            await addDoc(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'stores'), {
+                nama, alamat, telp, timestamp: Timestamp.now()
+            });
+            alert("Toko berhasil disimpan!");
+        };
+
+        // --- RENDERING ---
         function render() {
             const main = document.getElementById('app-content');
-            
-            // Update UI Nav
+            if(!initialLoadDone) return;
+
+            // Update Nav State
             document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active-tab'));
             document.querySelectorAll('.indicator').forEach(ind => ind.classList.add('hidden'));
             document.getElementById(`nav-${currentTab}`).classList.add('active-tab');
             document.getElementById(`nav-${currentTab}`).querySelector('.indicator').classList.remove('hidden');
 
             if (currentTab === 'dashboard') {
-                const totalOmzet = sales.reduce((a,b) => a + b.total, 0);
+                const total = sales.reduce((a,b) => a + b.total, 0);
                 main.innerHTML = `
                     <div class="grid grid-cols-2 gap-4">
-                        <div class="bg-white p-5 rounded-3xl shadow-sm border-l-4 border-emerald-500">
-                            <p class="text-[10px] text-gray-400 uppercase font-black">Total Omzet</p>
-                            <p class="text-xl font-black">Rp ${totalOmzet.toLocaleString()}</p>
+                        <div class="bg-indigo-600 p-5 rounded-3xl text-white shadow-lg">
+                            <p class="text-[9px] font-black uppercase tracking-widest opacity-70">Omzet Penjualan</p>
+                            <p class="text-xl font-black mt-1">Rp ${total.toLocaleString()}</p>
                         </div>
-                        <div class="bg-indigo-600 p-5 rounded-3xl shadow-sm text-white">
-                            <p class="text-[10px] opacity-70 uppercase font-black">Total Produk</p>
-                            <p class="text-xl font-black">${products.length}</p>
+                        <div class="bg-white p-5 rounded-3xl border border-gray-100">
+                            <p class="text-[9px] font-black uppercase tracking-widest text-gray-400">Total Toko</p>
+                            <p class="text-xl font-black mt-1 text-gray-800">${stores.length}</p>
                         </div>
                     </div>
-                    <div class="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
-                        <h3 class="text-[10px] font-black text-indigo-600 uppercase mb-4 tracking-widest">Stok Menipis</h3>
-                        <div class="space-y-3">
-                            ${products.filter(p => p.stok < 10).map(p => `
-                                <div class="flex justify-between items-center text-sm">
-                                    <span class="font-bold text-gray-600">${p.nama}</span>
-                                    <span class="text-red-500 font-black">${p.stok} unit</span>
+                    <div class="bg-white p-5 rounded-3xl border border-gray-100">
+                        <h3 class="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">Aktivitas Terakhir</h3>
+                        <div class="space-y-4">
+                            ${sales.slice(0,5).map(s => `
+                                <div class="flex justify-between items-center border-b border-gray-50 pb-3">
+                                    <div>
+                                        <p class="text-xs font-black text-gray-800">${s.prodNama}</p>
+                                        <p class="text-[9px] text-gray-400 uppercase">${s.storeName}</p>
+                                    </div>
+                                    <p class="text-xs font-black text-emerald-500">+${s.total.toLocaleString()}</p>
                                 </div>
-                            `).join('') || '<p class="text-xs text-gray-400 italic text-center">Stok aman semua.</p>'}
+                            `).join('') || '<p class="text-center text-xs text-gray-300 py-10 italic">Belum ada transaksi</p>'}
                         </div>
                     </div>
                 `;
@@ -191,63 +219,154 @@
             if (currentTab === 'kasir') {
                 main.innerHTML = `
                     <div class="bg-white p-6 rounded-3xl shadow-sm space-y-4 border border-indigo-50">
-                        <h2 class="text-xs font-black text-indigo-600 uppercase tracking-widest">Input Penjualan</h2>
-                        <select id="sale-toko" class="w-full p-4 bg-gray-50 rounded-2xl text-sm border-0 focus:ring-2 focus:ring-indigo-500">
-                            <option value="">-- Pilih Toko --</option>
-                            ${stores.map(s => `<option value="${s.id}">${s.nama}</option>`).join('')}
+                        <h2 class="text-xs font-black text-indigo-600 uppercase tracking-widest">Input Kasir</h2>
+                        <select id="sale-toko-name" class="w-full p-4 bg-gray-50 rounded-2xl text-sm outline-none border-2 border-transparent focus:border-indigo-500">
+                            <option value="">Pilih Toko/Pelanggan</option>
+                            ${stores.map(s => `<option value="${s.nama}">${s.nama}</option>`).join('')}
                         </select>
-                        <select id="sale-prod" class="w-full p-4 bg-gray-50 rounded-2xl text-sm border-0 focus:ring-2 focus:ring-indigo-500">
-                            <option value="">-- Pilih Produk --</option>
+                        <select id="sale-prod" class="w-full p-4 bg-gray-50 rounded-2xl text-sm outline-none border-2 border-transparent focus:border-indigo-500">
+                            <option value="">Pilih Produk</option>
                             ${products.map(p => `<option value="${p.id}">${p.nama} (Rp ${p.hargaJual.toLocaleString()})</option>`).join('')}
                         </select>
-                        <input type="number" id="sale-qty" placeholder="Jumlah Laku" class="w-full p-4 bg-gray-50 rounded-2xl text-sm border-0 focus:ring-2 focus:ring-indigo-500">
-                        <button onclick="saveSale()" class="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg active:scale-95 transition-all">Selesaikan Transaksi</button>
+                        <input type="number" id="sale-qty" placeholder="Jumlah Qty" class="w-full p-4 bg-gray-50 rounded-2xl text-sm border-0 focus:ring-2 focus:ring-indigo-100">
+                        <button onclick="saveSale()" class="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg active:scale-95 transition-all">Simpan Penjualan</button>
+                    </div>
+
+                    <div class="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden mt-6">
+                        <div class="p-5 border-b border-gray-50">
+                            <h3 class="text-[10px] font-black text-gray-400 uppercase tracking-widest">Tabel Penjualan</h3>
+                        </div>
+                        <div class="table-container overflow-x-auto">
+                            <table class="w-full text-left">
+                                <thead class="bg-gray-50">
+                                    <tr class="text-[9px] font-black text-gray-400 uppercase tracking-widest">
+                                        <th class="p-4">Toko</th>
+                                        <th class="p-4">Barang</th>
+                                        <th class="p-4 text-center">Qty</th>
+                                        <th class="p-4 text-right">Total</th>
+                                        <th class="p-4 text-center">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-50 text-xs">
+                                    ${sales.map(s => `
+                                        <tr>
+                                            <td class="p-4 font-bold text-gray-800">${s.storeName}</td>
+                                            <td class="p-4 text-gray-500">${s.prodNama}</td>
+                                            <td class="p-4 text-center font-mono">${s.qty}</td>
+                                            <td class="p-4 text-right font-black text-indigo-600">Rp ${s.total.toLocaleString()}</td>
+                                            <td class="p-4 text-center">
+                                                <button onclick="deleteItem('sales', '${s.id}')" class="text-red-400 text-lg">×</button>
+                                            </td>
+                                        </tr>
+                                    `).join('') || '<tr><td colspan="5" class="p-10 text-center text-gray-300">Data kosong</td></tr>'}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 `;
             }
 
-            if (currentTab === 'data') {
+            if (currentTab === 'gudang') {
                 main.innerHTML = `
-                    <div class="space-y-6">
-                        <!-- Form Produk -->
-                        <div class="bg-white p-6 rounded-3xl shadow-sm space-y-4 border border-gray-100">
-                            <h3 class="text-xs font-black text-indigo-600 uppercase tracking-widest">Tambah Produk Baru</h3>
-                            <input type="text" id="prod-nama" placeholder="Nama Produk" class="w-full p-4 bg-gray-50 rounded-2xl text-sm border-0">
-                            <div class="grid grid-cols-2 gap-2">
-                                <input type="number" id="prod-beli" placeholder="Harga Beli" class="w-full p-4 bg-gray-50 rounded-2xl text-sm border-0">
-                                <input type="number" id="prod-jual" placeholder="Harga Jual" class="w-full p-4 bg-gray-50 rounded-2xl text-sm border-0">
-                            </div>
-                            <input type="number" id="prod-stok" placeholder="Stok" class="w-full p-4 bg-gray-50 rounded-2xl text-sm border-0">
-                            <button onclick="addProduct()" class="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-md">Simpan Produk</button>
-                        </div>
-
-                        <!-- Form Toko -->
-                        <div class="bg-white p-6 rounded-3xl shadow-sm space-y-4 border border-gray-100">
-                            <h3 class="text-xs font-black text-indigo-600 uppercase tracking-widest">Tambah Toko / Cabang</h3>
-                            <input type="text" id="store-nama" placeholder="Nama Toko" class="w-full p-4 bg-gray-50 rounded-2xl text-sm border-0">
-                            <textarea id="store-alamat" placeholder="Alamat Lengkap Toko" class="w-full p-4 bg-gray-50 rounded-2xl text-sm border-0 h-20"></textarea>
-                            <button onclick="addStore()" class="w-full bg-gray-800 text-white py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-md">Simpan Toko</button>
-                        </div>
-
-                        <!-- List Toko -->
-                        <div class="space-y-2">
-                            <h3 class="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-2">Daftar Toko Terdaftar</h3>
-                            ${stores.map(s => `
-                                <div class="bg-white p-4 rounded-2xl shadow-sm flex justify-between items-center border border-gray-50">
-                                    <div>
-                                        <p class="font-bold text-sm text-gray-700">${s.nama}</p>
-                                        <p class="text-[10px] text-gray-400">${s.alamat}</p>
-                                    </div>
-                                    <button onclick="deleteItem('stores', '${s.id}')" class="text-red-300 text-xl font-bold p-2">×</button>
-                                </div>
-                            `).join('')}
-                        </div>
+                    <!-- Sub-nav Toggle -->
+                    <div class="flex bg-gray-100 p-1.5 rounded-2xl mb-4">
+                        <button onclick="switchSubGudang('produk')" class="flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${currentSubGudang === 'produk' ? 'sub-nav-active shadow-sm' : 'text-gray-400'}">Daftar Produk</button>
+                        <button onclick="switchSubGudang('toko')" class="flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${currentSubGudang === 'toko' ? 'sub-nav-active shadow-sm' : 'text-gray-400'}">Daftar Toko</button>
                     </div>
+
+                    ${currentSubGudang === 'produk' ? renderProdukView() : renderTokoView()}
                 `;
             }
         }
 
-        render();
+        function renderProdukView() {
+            return `
+                <div class="bg-white p-6 rounded-3xl shadow-sm space-y-4">
+                    <h3 class="text-xs font-black text-indigo-600 uppercase tracking-widest">Tambah Produk</h3>
+                    <input type="text" id="p-n" placeholder="Nama Barang" class="w-full p-4 bg-gray-50 rounded-2xl text-sm border-0">
+                    <div class="grid grid-cols-2 gap-3">
+                        <input type="number" id="p-b" placeholder="Harga Beli" class="p-4 bg-gray-50 rounded-2xl text-sm border-0">
+                        <input type="number" id="p-j" placeholder="Harga Jual" class="p-4 bg-gray-50 rounded-2xl text-sm border-0">
+                    </div>
+                    <input type="number" id="p-s" placeholder="Stok" class="w-full p-4 bg-gray-50 rounded-2xl text-sm border-0">
+                    <button onclick="addProduct()" class="w-full bg-gray-800 text-white py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest">Simpan Produk</button>
+                </div>
+
+                <div class="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden mt-6">
+                    <div class="p-5 border-b border-gray-50">
+                        <h3 class="text-[10px] font-black text-gray-400 uppercase tracking-widest">Tabel Produk</h3>
+                    </div>
+                    <div class="table-container overflow-x-auto">
+                        <table class="w-full text-left">
+                            <thead class="bg-gray-50">
+                                <tr class="text-[9px] font-black text-gray-400 uppercase tracking-widest">
+                                    <th class="p-4">Produk</th>
+                                    <th class="p-4 text-right">Modal</th>
+                                    <th class="p-4 text-right">Jual</th>
+                                    <th class="p-4 text-center">Stok</th>
+                                    <th class="p-4 text-center">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-50 text-xs">
+                                ${products.map(p => `
+                                    <tr>
+                                        <td class="p-4 font-bold text-gray-800">${p.nama}</td>
+                                        <td class="p-4 text-right text-gray-400 italic">Rp ${p.hargaBeli.toLocaleString()}</td>
+                                        <td class="p-4 text-right font-black text-indigo-600">Rp ${p.hargaJual.toLocaleString()}</td>
+                                        <td class="p-4 text-center font-mono">${p.stok}</td>
+                                        <td class="p-4 text-center">
+                                            <button onclick="deleteItem('products', '${p.id}')" class="text-red-400 text-lg">×</button>
+                                        </td>
+                                    </tr>
+                                `).join('') || '<tr><td colspan="5" class="p-10 text-center text-gray-300">Belum ada barang</td></tr>'}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderTokoView() {
+            return `
+                <div class="bg-white p-6 rounded-3xl shadow-sm space-y-4">
+                    <h3 class="text-xs font-black text-indigo-600 uppercase tracking-widest">Tambah Toko Baru</h3>
+                    <input type="text" id="s-n" placeholder="Nama Toko" class="w-full p-4 bg-gray-50 rounded-2xl text-sm border-0">
+                    <input type="text" id="s-a" placeholder="Alamat (Kota/Jalan)" class="w-full p-4 bg-gray-50 rounded-2xl text-sm border-0">
+                    <input type="text" id="s-t" placeholder="Nomor Telepon" class="w-full p-4 bg-gray-50 rounded-2xl text-sm border-0">
+                    <button onclick="addStore()" class="w-full bg-emerald-600 text-white py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest">Simpan Toko</button>
+                </div>
+
+                <div class="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden mt-6">
+                    <div class="p-5 border-b border-gray-50">
+                        <h3 class="text-[10px] font-black text-gray-400 uppercase tracking-widest">Daftar Toko Terdaftar</h3>
+                    </div>
+                    <div class="table-container overflow-x-auto">
+                        <table class="w-full text-left">
+                            <thead class="bg-gray-50">
+                                <tr class="text-[9px] font-black text-gray-400 uppercase tracking-widest">
+                                    <th class="p-4">Nama Toko</th>
+                                    <th class="p-4">Alamat</th>
+                                    <th class="p-4">Kontak</th>
+                                    <th class="p-4 text-center">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-50 text-xs">
+                                ${stores.map(s => `
+                                    <tr>
+                                        <td class="p-4 font-bold text-gray-800">${s.nama}</td>
+                                        <td class="p-4 text-gray-500">${s.alamat || '-'}</td>
+                                        <td class="p-4 text-gray-400 font-mono">${s.telp || '-'}</td>
+                                        <td class="p-4 text-center">
+                                            <button onclick="deleteItem('stores', '${s.id}')" class="text-red-400 text-lg">×</button>
+                                        </td>
+                                    </tr>
+                                `).join('') || '<tr><td colspan="4" class="p-10 text-center text-gray-300">Belum ada toko terdaftar</td></tr>'}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        }
     </script>
 </body>
 </html>
